@@ -19,7 +19,7 @@ import (
 var (
 	regexpCache sync.Map
 	// 缓存大小限制 (例如限制2500个正则表达式)
-	maxCacheSize = 2500
+	maxCacheSize = 3000
 	// 当前缓存数量
 	currentCacheSize atomic.Int32
 )
@@ -122,29 +122,55 @@ func Match(httpResponse *pkg.HttpResponse, tags *pkg.Tags, favicon string, logge
 		for _, http := range tag.HTTP {
 			totalMatchers += len(http.Matchers)
 			for _, matcher := range http.Matchers {
+				innerMatches := 0
 				switch {
 				case matcher.Type == "word" && matcher.Part == "header":
 					for _, word := range matcher.Words {
 						if matchMode(headerStr, word, matcher.Condition) {
-							if http.Mode == "or" || http.Mode == "" {
+							if matcher.Condition == "or" || matcher.Condition == "" {
 								matchedTags = append(matchedTags, tag.Info.Name)
 							}
+							if matcher.Condition == "and" {
+								innerMatches++
+							}
+						}
+					}
+					// body内and模式
+					if innerMatches == len(matcher.Words) {
+						if http.Mode == "and" {
 							matches++
+						}
+						if http.Mode == "or" || http.Mode == "" {
+							matchedTags = append(matchedTags, tag.Info.Name)
 						}
 					}
 				case matcher.Type == "word" && matcher.Part == "body":
 					for _, word := range matcher.Words {
 						if matchMode(bodyStr, word, matcher.Condition) {
-							if http.Mode == "or" || http.Mode == "" {
+							if matcher.Condition == "or" || matcher.Condition == "" {
 								matchedTags = append(matchedTags, tag.Info.Name)
 							}
+							if matcher.Condition == "and" {
+								innerMatches++
+							}
+						}
+					}
+					// body内and模式
+					if innerMatches == len(matcher.Words) {
+						if http.Mode == "and" {
 							matches++
+						}
+						if http.Mode == "or" || http.Mode == "" {
+							matchedTags = append(matchedTags, tag.Info.Name)
 						}
 					}
 				}
 			}
 		}
-		if matches >= totalMatchers { // 修改这里,要求matches必须等于totalMatchers才算匹配成功
+		if matches >= totalMatchers {
+			if matches == 0 {
+				continue
+			}
 			matchedTags = append(matchedTags, tag.Info.Name)
 		}
 	}
